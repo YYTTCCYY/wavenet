@@ -33,7 +33,7 @@ class Model(object):
             for i in range(num_layers):
                 rate = 2**i
                 name = 'b{}-l{}'.format(b, i)
-                h = dilated_conv1d(h, num_hidden, rate=rate, name=name)
+                h = dilated_conv1d(h, num_hidden, rate=rate, name=name, activation=tf.nn.tanh)
                 hs.append(h)
 
         outputs = conv1d(h,

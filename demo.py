@@ -2,6 +2,7 @@ from time import time
 from wavenet.utils import make_batch
 from wavenet.models import Model, Generator
 from IPython.display import Audio
+from wavenet.utils import mu_law_decode
 
 inputs, targets = make_batch('assets/voice.wav')
 num_time_samples = inputs.shape[1]
@@ -30,4 +31,5 @@ predictions = generator.run(input_, 32000)
 toc = time()
 print('Generating took {} seconds.'.format(toc-tic))
 
+predictions = mu_law_decode(predictions)
 Audio(predictions, rate=44100)

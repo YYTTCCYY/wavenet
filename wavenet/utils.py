@@ -10,7 +10,8 @@ def normalize(data):
 
 
 def make_batch(path):
-    data = wavfile.read(path)[1][:, 0]
+    data = wavfile.read(path)
+    data = data[1][:, 0]
 
     data_ = normalize(data)
     data_f = np.sign(data_) * (np.log(1 + 255*np.abs(data_)) / np.log(1 + 255))
@@ -23,3 +24,6 @@ def make_batch(path):
     # targets数字化
     targets = (np.digitize(data_f[1::], bins, right=False) - 1)[None, :]
     return inputs, targets
+
+def mu_law_decode(data):
+    return np.sign(data) * ((255 + 1) ** np.abs(data) - 1) / 255

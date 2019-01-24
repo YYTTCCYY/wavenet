@@ -46,6 +46,7 @@ class Model(object):
         costs = tf.nn.sparse_softmax_cross_entropy_with_logits(
             labels=targets, logits=outputs)
         cost = tf.reduce_mean(costs)
+        tf.summary.scalar('cost', cost)
 
         train_step = tf.train.AdamOptimizer(learning_rate=0.001).minimize(cost)
 
@@ -64,29 +65,41 @@ class Model(object):
         self.cost = cost
         self.train_step = train_step
         self.sess = sess
+        self.summaries = tf.summary.merge_all()
 
     def _train(self, inputs, targets):
         feed_dict = {self.inputs: inputs, self.targets: targets}
-        cost, _ = self.sess.run(
-            [self.cost, self.train_step],
+        summary, cost, _ = self.sess.run(
+            [self.summaries, self.cost, self.train_step],
             feed_dict=feed_dict)
-        return cost
+        return summary, cost
 
     def train(self, inputs, targets):
-        # writer = tf.summary.FileWriter('./logdir')
-        # writer.add_graph(tf.get_default_graph())
+        saver = tf.train.Saver()
+        ckpt = tf.train.get_checkpoint_state('./logdir')
+        if ckpt is None:
+            pass
+        else:
+            saver.restore(self.sess, ckpt.model_checkpoint_path)
+
+        writer = tf.summary.FileWriter('./logdir')
+        writer.add_graph(tf.get_default_graph())
+
         losses = []
         terminal = False
         i = 0
         while not terminal:
             i += 1
-            cost = self._train(inputs, targets)
+            summary, cost = self._train(inputs, targets)
+            writer.add_summary(summary, int(i))
             if cost < 1e-1:
+                saver.save(self.sess, "./logdir/MyModel-" + str(i))
                 terminal = True
             losses.append(cost)
             if i % 50 == 0:
-                plt.plot(losses)
-                plt.show()
+                saver.save(self.sess, "./logdir/MyModel-" + str(i), write_meta_graph=False)
+                # plt.plot(losses)
+                # plt.show()
 
 
 class Generator(object):

@@ -26,7 +26,7 @@ model.train(num_time_samples,
             restoredir='./logdir/2019-02-17T23-16-00',
             savedir='./logdir',
             terminal=False,
-            temperature_flg=True)
+            temperature_flg=False)
 toc = time.time()
 
 print('Training took {} seconds.'.format(toc-tic))
@@ -50,7 +50,7 @@ Audio(predictions, rate=16000)
 
 Time = time.strftime('%Y-%m-%dT%H-%M-%S',time.localtime(time.time()))
 generator_dir = './generator/' + str(Time)
-os.mkdir(generator_dir)
+os.makedirs(generator_dir)
 generator_dir = generator_dir + '/test.wav'
 y = np.array(predictions[0, :])
 y = y.astype(np.float32)

@@ -165,7 +165,7 @@ class Model(object):
 
         Time = time.strftime('%Y-%m-%dT%H-%M-%S',time.localtime(time.time()))
         savedir = savedir + '/' + str(Time)
-        os.mkdir(savedir)
+        os.makedirs(savedir)
 
         writer = tf.summary.FileWriter(savedir)
         writer.add_graph(tf.get_default_graph())

@@ -3,9 +3,9 @@ import tensorflow as tf
 
 
 def time_to_batch(inputs, rate):
-    '''If necessary zero-pads inputs and reshape by rate.
-    
-    Used to perform 1D dilated convolution.
+    '''将1d信号变换为batch形式
+
+    在1D dilated convolution. 前使用
     
     Args:
       inputs: (tensor) 
@@ -28,9 +28,9 @@ def time_to_batch(inputs, rate):
     return outputs
 
 def batch_to_time(inputs, rate, crop_left=0):
-    ''' Reshape to 1d signal, and remove excess zero-padding.
+    ''' 将运算后的信号变为1d
     
-    Used to perform 1D dilated convolution.
+    在1D dilated convolution. 后使用
     
     Args:
       inputs: (tensor)
@@ -62,10 +62,11 @@ def conv1d(inputs,
            data_format='NWC',
            gain=np.sqrt(2),
            activation=tf.nn.relu,
-           bias=False):
-    '''One dimension convolution helper function.
+           bias=False,
+           name='conv'):
+    '''卷积函数
     
-    Sets variables with good defaults.
+    设置好参数
     
     Args:
       inputs:
@@ -77,6 +78,7 @@ def conv1d(inputs,
       gain:
       activation:
       bias:
+      name
       
     Outputs:
       outputs:
@@ -91,7 +93,7 @@ def conv1d(inputs,
     two dimensional data: 'NHWC' (default) and 'NCHW'
     three dimensional data: 'NDHWC'
     '''
-    w = tf.get_variable(name='w',
+    w = tf.get_variable(name=name + '_w',
                         shape=(filter_width, in_channels, out_channels),
                         initializer=w_init)
 
@@ -99,15 +101,16 @@ def conv1d(inputs,
                            w,
                            stride=stride,
                            padding=padding,
-                           data_format=data_format)
+                           data_format=data_format,
+                           name=name)
 
     if bias:
         b_init = tf.constant_initializer(0.0)
-        b = tf.get_variable(name='b',
+        b = tf.get_variable(name=name + '_b',
                             shape=(out_channels, ),
                             initializer=b_init)
 
-        outputs = outputs + tf.expand_dims(tf.expand_dims(b, 0), 0)
+        outputs = tf.add(outputs, tf.expand_dims(tf.expand_dims(b, 0), 0), name=name + '_add')
 
     if activation:
         outputs = activation(outputs)
@@ -119,11 +122,13 @@ def dilated_conv1d(inputs,
                    filter_width=2,
                    rate=1,
                    padding='VALID',
-                   name=None,
+                   name='dilated',
                    gain=np.sqrt(2),
                    activation=tf.nn.relu):
     '''
-    
+
+    因果卷积
+
     Args:
       inputs: (tensor)
       output_channels:
@@ -146,7 +151,8 @@ def dilated_conv1d(inputs,
                           filter_width=filter_width,
                           padding=padding,
                           gain=gain,
-                          activation=activation)
+                          activation=activation,
+                          bias=True)
         _, conv_out_width, _ = outputs_.get_shape().as_list()
         new_width = conv_out_width * rate
         diff = new_width - width
@@ -160,25 +166,107 @@ def dilated_conv1d(inputs,
 
     return outputs
 
-def _causal_linear(inputs, state, name=None, activation=None):
+def dense_layers(inputs,
+                out_channels,
+                filter_width=1,
+                padding='SAME',
+                bias=True,
+                name='dense',
+                gain=np.sqrt(2),
+                activation=tf.nn.relu):
     assert name
-    '''
-    '''
-    with tf.variable_scope(name, reuse=True) as scope:
-        w = tf.get_variable('w')
-        w_r = w[0, :, :]
-        w_e = w[1, :, :]
+    with tf.variable_scope(name):
+        outputs = conv1d(inputs,
+                         out_channels,
+                         filter_width=filter_width,
+                         padding=padding,
+                         gain=gain,
+                         activation=activation,
+                         bias=bias)
+        return outputs
 
-        output = tf.matmul(inputs, w_e) + tf.matmul(state, w_r)
+def skip_layers(inputs,
+                out_channels,
+                filter_width=1,
+                padding='SAME',
+                bias=True,
+                name='skip',
+                gain=np.sqrt(2),
+                activation=tf.nn.relu):
+    assert name
+    with tf.variable_scope(name):
+        outputs = conv1d(inputs,
+                         out_channels,
+                         filter_width=filter_width,
+                         padding=padding,
+                         gain=gain,
+                         activation=activation,
+                         bias=bias)
+        return outputs
+
+
+def _pretreatment(inputs, name='pretreatment', activation=tf.nn.tanh):
+    assert name
+    with tf.variable_scope(name, reuse=True):
+        w = tf.get_variable('conv_w')
+        w_ = w[0, :, :]
+        b = tf.get_variable('conv_b')
+
+        output = tf.matmul(inputs, w_) + b
 
         if activation:
             output = activation(output)
     return output
 
-def _output_linear(h, name=''):
-    with tf.variable_scope(name, reuse=True):
-        w = tf.get_variable('w')[0, :, :]
-        b = tf.get_variable('b')
 
-        output = tf.matmul(h, w) + tf.expand_dims(b, 0)
+def _causal_linear(inputs, state, name=None, activation=tf.nn.tanh):
+    assert name
+    with tf.variable_scope(name, reuse=True):
+        w = tf.get_variable('dilated/conv_w')
+        b = tf.get_variable('dilated/conv_b')
+
+        w_r = w[0, :, :]
+        w_e = w[1, :, :]
+
+        output = tf.matmul(inputs, w_e) + tf.matmul(state, w_r) + b
+
+        if activation:
+            output = activation(output)
+    return output
+
+def _skip(inputs, name=None, activation=tf.nn.relu):
+    assert name
+    with tf.variable_scope(name, reuse=True):
+        w = tf.get_variable('skip/conv_w')[0, :, :]
+        b = tf.get_variable('skip/conv_b')
+
+        output = tf.matmul(inputs, w) + b
+
+        if activation:
+            output = activation(output)
+    return output
+
+def _dense(inputs, name=None, activation=tf.nn.relu):
+    assert name
+    with tf.variable_scope(name, reuse=True):
+        w = tf.get_variable('dense/conv_w')[0, :, :]
+        b = tf.get_variable('dense/conv_b')
+
+        output = tf.matmul(inputs, w) + b
+
+        if activation:
+            output = activation(output)
+    return output
+
+def _output_linear(h, name='processing'):
+    with tf.variable_scope(name, reuse=True):
+        w_1 = tf.get_variable('out_conv1_w')[0, :, :]
+        b_1 = tf.get_variable('out_conv1_b')
+        w_2 = tf.get_variable('out_conv2_w')[0, :, :]
+        b_2 = tf.get_variable('out_conv2_b')
+
+        h = tf.matmul(h, w_1) + tf.expand_dims(b_1, 0)
+        h = tf.nn.relu(h)
+
+        output = tf.matmul(h, w_2) + tf.expand_dims(b_2, 0)
     return output
